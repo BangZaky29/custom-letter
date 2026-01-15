@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
 
     // ✅ WAJIB sama dengan SQL & nginx
-    base: '/generator-surat/custom-surat/',
+    base: '/generator-surat/custom-letter/',
 
     server: {
       port: 3000,
