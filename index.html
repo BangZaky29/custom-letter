@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+
+    <!-- Viewport -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/src/assets/NS_white_01.png" />
+
+    <!-- Title -->
+    <title>Custom Letter Generator</title>
+
+    <!-- Google Fonts -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:wght@300;400;700&family=Roboto+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Custom Styles (Scrollbar + Print Only) -->
+    <style>
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+
+      /* ================= PRINT STYLES ================= */
+      @media print {
+        /* Hide everything */
+        body * {
+          visibility: hidden;
+        }
+
+        /* Show canvas only */
+        #document-canvas,
+        #document-canvas * {
+          visibility: visible;
+        }
+
+        /* Position canvas */
+        #document-canvas {
+          position: fixed !important;
+          top: 0 !important;
+          left: 0 !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          box-shadow: none !important;
+          border: none !important;
+          transform: none !important;
+          z-index: 9999;
+          overflow: visible !important;
+        }
+
+        /* Reset body */
+        body {
+          background: white !important;
+          overflow: visible !important;
+        }
+
+        /* Hide UI helpers */
+        .no-print {
+          display: none !important;
+        }
+
+        /* Ensure colors print */
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+      }
+    </style>
+
+    <!-- Import Map (Optional – OK for sandbox / hybrid setup) -->
+    <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom": "https://esm.sh/react-dom@^19.2.3",
+    "react-dom/client": "https://esm.sh/react-dom@^19.2.3/client",
+    "html2canvas": "https://esm.sh/html2canvas@1.4.1",
+    "jspdf": "https://esm.sh/jspdf@2.5.1",
+    "lucide-react": "https://esm.sh/lucide-react@0.344.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/"
+  }
+}
+</script>
+  </head>
+
+  <body class="bg-canvas text-slate-800 font-sans antialiased overflow-hidden">
+    <div id="root"></div>
+
+    <!-- Vite Entry -->
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

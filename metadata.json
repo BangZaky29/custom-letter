@@ -1,0 +1,5 @@
+{
+  "name": "Custom Letter Generator",
+  "description": "A professional, blank-canvas document editor for creating custom letters, invoices, and documents directly in the browser. Features drag-and-drop editing, PDF/Word export, and a mobile-responsive interface.",
+  "requestFramePermissions": []
+}
