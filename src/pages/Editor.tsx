@@ -211,7 +211,8 @@ export const Editor: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         if (action === 'pdf') {
           await downloadPDF(`${filenameBase}.pdf`);
         } else if (action === 'word') {
-          await downloadWORD(state, `${filenameBase}.docx`);
+          // IMPORTANT: Word export must use .doc extension for HTML content to open correctly in Word
+          await downloadWORD(state, `${filenameBase}.doc`);
         }
         setNotification('File saved successfully');
       } catch (e) {
@@ -288,7 +289,7 @@ export const Editor: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     <div className="flex flex-col h-screen bg-slate-100 overflow-hidden">
       
       {/* --- HEADER --- */}
-      <div className="relative z-50 flex flex-col bg-white shadow-sm border-b border-slate-200">
+      <div className="relative z-50 flex flex-col bg-white shadow-sm border-b border-slate-200 no-print">
         <header className="h-16 flex justify-between items-center px-4 md:px-6 relative">
           
           <div className="flex items-center gap-4 w-1/3 ml-12 lg:ml-0">
@@ -344,11 +345,17 @@ export const Editor: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     {/* Print Preview */}
                     <button 
                       onClick={() => handleExport('print')}
-                      className="w-full text-left px-4 py-3 hover:bg-slate-50 text-sm text-slate-700 flex items-center gap-3 transition-colors"
+                      className="relative w-full text-left px-4 py-3 hover:bg-slate-50 text-sm text-slate-700 flex items-center gap-3 transition-colors rounded-lg"
                     >
+                      {/* Badge "Beta" */}
+                      <span className="absolute top-2 right-2 bg-purple-100 text-purple-800 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
+                        Beta
+                      </span>
+
                       <span className="flex items-center justify-center w-8 h-8 rounded bg-slate-100 text-slate-600">
                         <Icon name="printer" size={16} />
                       </span>
+
                       <div className="flex flex-col">
                         <span className="font-medium">Print Preview</span>
                         <span className="text-[10px] text-slate-400">Preview & Print Document</span>
@@ -357,28 +364,42 @@ export const Editor: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
                     <div className="h-px bg-slate-100 my-1 mx-4" />
 
+
                     {/* PDF Download */}
-                    <button 
-                      onClick={() => handleExport('pdf')}
-                      className="w-full text-left px-4 py-3 hover:bg-slate-50 text-sm text-slate-700 flex items-center gap-3 transition-colors"
-                    >
-                      <span className="flex items-center justify-center w-8 h-8 rounded bg-red-50 text-red-600">
-                        <Icon name="file-text" size={16} />
-                      </span>
-                      <div className="flex flex-col">
-                        <span className="font-medium">Download PDF</span>
-                        <span className="text-[10px] text-slate-400">Standard Portable Document</span>
-                      </div>
-                    </button>
+                      <button 
+                        onClick={() => handleExport('pdf')}
+                        className="relative w-full text-left px-4 py-3 hover:bg-slate-50 text-sm text-slate-700 flex items-center gap-3 transition-colors rounded-lg"
+                      >
+                        {/* Badge "Disarankan" */}
+                        <span className="absolute top-2 right-2 bg-yellow-100 text-yellow-800 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
+                          Disarankan
+                        </span>
+
+                        <span className="flex items-center justify-center w-8 h-8 rounded bg-red-50 text-red-600">
+                          <Icon name="file-text" size={16} />
+                        </span>
+
+                        <div className="flex flex-col">
+                          <span className="font-medium">Download PDF</span>
+                          <span className="text-[10px] text-slate-400">Standard Portable Document</span>
+                        </div>
+                      </button>
+
 
                     {/* Word Download */}
                     <button 
                       onClick={() => handleExport('word')}
-                      className="w-full text-left px-4 py-3 hover:bg-slate-50 text-sm text-slate-700 flex items-center gap-3 transition-colors"
+                      className="relative w-full text-left px-4 py-3 hover:bg-slate-50 text-sm text-slate-700 flex items-center gap-3 transition-colors rounded-lg"
                     >
+                      {/* Badge "Beta" */}
+                      <span className="absolute top-2 right-2 bg-purple-100 text-purple-800 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
+                        Beta
+                      </span>
+
                       <span className="flex items-center justify-center w-8 h-8 rounded bg-blue-50 text-blue-600">
                         <Icon name="file-text" size={16} />
                       </span>
+
                       <div className="flex flex-col">
                         <span className="font-medium">Download Word</span>
                         <span className="text-[10px] text-slate-400">Editable Microsoft Word (.docx)</span>
@@ -395,12 +416,14 @@ export const Editor: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <div className="flex-1 flex overflow-hidden relative z-0">
         
         {/* LEFT SIDEBAR (OVERLAY) */}
-        <LeftSidebar 
-            isOpen={isLeftSidebarOpen} 
-            toggleSidebar={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
-            onApplyTemplate={initiateTemplateApply}
-            onNavigateToPage={scrollToPage}
-        />
+        <div className="no-print z-50">
+            <LeftSidebar 
+                isOpen={isLeftSidebarOpen} 
+                toggleSidebar={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
+                onApplyTemplate={initiateTemplateApply}
+                onNavigateToPage={scrollToPage}
+            />
+        </div>
 
         {/* CANVAS */}
         <div className="flex-1 flex flex-col min-w-0">
@@ -408,13 +431,15 @@ export const Editor: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </div>
 
         {/* RIGHT SIDEBAR (SETTINGS/TOOLS) */}
-        <EditorSidebar 
-           isOpen={isRightSidebarOpen} 
-           onClose={() => setIsRightSidebarOpen(false)} 
-           activeTab={activeRightTab}
-           onTabChange={setActiveRightTab}
-           onApplyTemplate={(type) => initiateTemplateApply(type)}
-        />
+        <div className="no-print z-40">
+            <EditorSidebar 
+            isOpen={isRightSidebarOpen} 
+            onClose={() => setIsRightSidebarOpen(false)} 
+            activeTab={activeRightTab}
+            onTabChange={setActiveRightTab}
+            onApplyTemplate={(type) => initiateTemplateApply(type)}
+            />
+        </div>
       </div>
 
       {/* Template Selection Modal */}

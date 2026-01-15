@@ -1,38 +1,57 @@
 
 import { DocumentState, DocElement } from "../types";
 
-export const downloadWORD = async (state: DocumentState, fileName: string = 'document.docx') => {
+export const downloadWORD = async (state: DocumentState, fileName: string = 'document.doc') => {
   const { width, height } = state.pageConfig;
   
-  // NOTE: Margins are set to 0 to ensure absolute positioning (x,y) from canvas maps exactly to Word page.
-  // The user's "margins" in the editor are visual guides, but the content positions (x,y) are relative to the page edge.
-  
-  const header = `<html xmlns:o='urn:schemas-microsoft-com:office:office' 
-xmlns:w='urn:schemas-microsoft-com:office:word' 
-xmlns='http://www.w3.org/TR/REC-html40'>
-<head>
-<meta charset='utf-8'>
-<title>Document</title>
-<style>
-  @page {
+  // Microsoft Word HTML Header with specific Namespaces
+  const header = `
+  <html xmlns:v="urn:schemas-microsoft-com:vml"
+  xmlns:o="urn:schemas-microsoft-com:office:office"
+  xmlns:w="urn:schemas-microsoft-com:office:word"
+  xmlns:m="http://schemas.microsoft.com/office/2004/12/omml"
+  xmlns="http://www.w3.org/TR/REC-html40">
+  <head>
+  <meta http-equiv=Content-Type content="text/html; charset=utf-8">
+  <title>Document</title>
+  <!--[if gte mso 9]>
+  <xml>
+  <w:WordDocument>
+  <w:View>Print</w:View>
+  <w:Zoom>100</w:Zoom>
+  <w:DoNotOptimizeForBrowser/>
+  </w:WordDocument>
+  </xml>
+  <![endif]-->
+  <style>
+  <!--
+   @page {
     size: ${width}mm ${height}mm;
-    margin: 0; 
-  }
-  div.Section1 {
-    page: Section1;
-    margin: 0;
-    padding: 0;
-  }
-  /* Style for page breaks */
-  .page-break {
-    page-break-before: always;
-    mso-special-character: line-break;
-  }
-</style>
-</head>
-<body>`;
+    margin: 0mm;
+    mso-page-orientation: ${state.pageConfig.orientation};
+   }
+   @page Section1 {
+    size: ${width}mm ${height}mm;
+    margin: 0mm;
+    mso-header-margin:0mm;
+    mso-footer-margin:0mm;
+    mso-paper-source:0;
+   }
+   div.Section1 {
+    page:Section1;
+    width: ${width}mm; 
+    height: ${height}mm; 
+   }
+   /* Reset styles for consistency */
+   p, h1, h2, h3, h4, h5, h6, div { margin: 0; padding: 0; }
+  -->
+  </style>
+  </head>
+  <body lang=EN-US style='tab-interval:36.0pt'>
+  <div class=Section1 style='layout-grid:15.6pt'>
+  `;
   
-  const footer = "</body></html>";
+  const footer = "</div></body></html>";
   
   let bodyContent = "";
 
@@ -50,45 +69,52 @@ xmlns='http://www.w3.org/TR/REC-html40'>
 
   // Iterate pages
   for (let i = 0; i < state.pageCount; i++) {
+      // If it's not the first page, add a page break
       if (i > 0) {
-          // Add page break before subsequent pages
           bodyContent += `<br clear=all style='mso-special-character:line-break;page-break-before:always'>`;
       }
 
-      bodyContent += `<div class="Section1" style="position: relative; width: ${width}mm; height: ${height}mm;">`;
+      // Container for the page - strictly sized
+      bodyContent += `<div style="position: relative; width: ${width}mm; height: ${height}mm; overflow: hidden;">`;
       
       const pageElements = elementsByPage[i];
       
       pageElements.forEach(el => {
-        // Convert styles to inline CSS string
-        const styleObj = {
-            position: 'absolute',
-            left: `${el.x}mm`,
-            top: `${el.y}mm`,
-            width: el.width ? `${el.width}mm` : 'auto',
-            fontFamily: el.style?.fontFamily || 'inherit',
-            fontSize: el.style?.fontSize ? `${el.style.fontSize}pt` : '12pt',
-            fontWeight: el.style?.fontWeight || 'normal',
-            fontStyle: el.style?.fontStyle || 'normal',
-            textDecoration: el.style?.textDecoration || 'none',
-            textAlign: el.style?.textAlign || 'left',
-            color: el.style?.color || '#000000',
-            lineHeight: el.style?.lineHeight || 1.4,
-            zIndex: 1
-        };
+        // Map common styles
+        const textAlign = el.style?.textAlign || 'left';
+        let cssText = `position: absolute; left: ${el.x}mm; top: ${el.y}mm; width: ${el.width ? el.width + 'mm' : 'auto'}; z-index: ${el.type === 'text' ? 5 : 1};`;
         
-        const styleString = Object.entries(styleObj)
-            .map(([k, v]) => `${k.replace(/[A-Z]/g, m => '-' + m.toLowerCase())}:${v}`)
-            .join(';');
-
         if (el.type === 'text') {
-            bodyContent += `<div style="${styleString}">${el.content}</div>`;
+            // Text Styles
+            const fontFamily = el.style?.fontFamily?.split(',')[0] || 'Arial';
+            const fontSize = el.style?.fontSize ? `${el.style.fontSize}pt` : '12pt'; // Word prefers pt
+            const fontWeight = el.style?.fontWeight || 'normal';
+            const fontStyle = el.style?.fontStyle || 'normal';
+            const textDecoration = el.style?.textDecoration || 'none';
+            const color = el.style?.color || '#000000';
+            const lineHeight = el.style?.lineHeight || 1.4;
+
+            cssText += `font-family: '${fontFamily}', sans-serif; font-size: ${fontSize}; font-weight: ${fontWeight}; font-style: ${fontStyle}; text-decoration: ${textDecoration}; text-align: ${textAlign}; color: ${color}; line-height: ${lineHeight};`;
+            
+            // For text alignment to work in absolute divs in Word, sometimes a paragraph wrapper helps
+            bodyContent += `<div style="${cssText}"><p style="margin:0; text-align:${textAlign};">${el.content.replace(/\n/g, '<br/>')}</p></div>`;
+
         } else if (el.type === 'image') {
-            bodyContent += `<img src="${el.content}" style="${styleString}" />`;
+            cssText += `height: ${el.height}mm;`;
+            bodyContent += `<img src="${el.content}" style="${cssText}" width="${el.width}" height="${el.height}" />`;
+
         } else if (el.type === 'rect') {
-             bodyContent += `<div style="position:absolute; left:${el.x}mm; top:${el.y}mm; width:${el.width}mm; height:${el.height}mm; border:${el.style?.border || '1px solid black'}; background-color:${el.style?.backgroundColor || 'transparent'};"></div>`;
+             const bgColor = el.style?.backgroundColor || 'transparent';
+             const border = el.style?.border || '1px solid black';
+             cssText += `height: ${el.height}mm; background-color: ${bgColor}; border: ${border};`;
+             bodyContent += `<div style="${cssText}"></div>`;
+
         } else if (el.type === 'line') {
-             bodyContent += `<div style="position:absolute; left:${el.x}mm; top:${el.y}mm; width:${el.width}mm; height:${Math.max(2, el.height || 2)}px; background-color:${el.style?.color || '#000000'};"></div>`;
+             const color = el.style?.color || '#000000';
+             const h = Math.max(1, el.height || 1); // Minimum height for visibility
+             // lines in HTML for Word are best done as border-top or thin divs
+             cssText += `height: ${h}px; background-color: ${color};`;
+             bodyContent += `<div style="${cssText}"></div>`;
         }
       });
 
@@ -104,7 +130,7 @@ xmlns='http://www.w3.org/TR/REC-html40'>
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = fileName;
+  link.download = fileName.endsWith('.doc') ? fileName : `${fileName}.doc`; // Force .doc
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

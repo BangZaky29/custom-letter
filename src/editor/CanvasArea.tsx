@@ -1,5 +1,5 @@
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useDocument } from '../store/documentStore';
 import { mmToPx, pxToMm } from '../utils/unitConverter';
 import { DocElement } from '../types';
@@ -340,7 +340,7 @@ export const CanvasArea: React.FC = () => {
   return (
     <div 
       id="canvas-area-container"
-      className="flex-1 bg-slate-100 overflow-auto flex flex-col items-center p-4 md:p-8 relative touch-none gap-8"
+      className="flex-1 bg-slate-100 overflow-auto flex flex-col items-center p-4 md:p-8 relative touch-none gap-8 no-scrollbar"
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
@@ -351,12 +351,22 @@ export const CanvasArea: React.FC = () => {
         <div
           key={pageIndex}
           id={`page-wrapper-${pageIndex}`}
-          className="document-page-wrapper relative shrink-0 shadow-lg transition-all duration-200 ease-out bg-white ring-1 ring-slate-200"
+          className="document-page-wrapper relative shrink-0 shadow-lg transition-all duration-200 ease-out bg-white ring-1 ring-slate-200 group"
           style={{
             width: pageWidthPx * zoom,
             height: pageHeightPx * zoom,
           }}
         >
+          {/* DELETE PAGE ICON (TOP RIGHT) */}
+          <button 
+             onClick={(e) => { e.stopPropagation(); dispatch({ type: 'REMOVE_PAGE', payload: pageIndex }); }}
+             className="absolute -top-3 -right-3 z-[60] bg-red-500 text-white p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-all no-print"
+             title={`Remove Page ${pageIndex + 1}`}
+             disabled={pageCount <= 1}
+          >
+              <Icon name="trash" size={14} />
+          </button>
+
           <div
             id={`document-page-${pageIndex}`}
             className="document-page bg-white relative origin-top-left select-none"
@@ -411,6 +421,28 @@ export const CanvasArea: React.FC = () => {
           </div>
         </div>
       ))}
+
+      {/* PAGE CONTROLS (BOTTOM) */}
+      <div className="flex items-center gap-4 mt-2 mb-8 no-print">
+         <button 
+           onClick={() => dispatch({ type: 'ADD_PAGE' })}
+           className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-full shadow-sm hover:border-blue-500 hover:text-blue-600 transition-colors text-sm font-medium"
+         >
+            <Icon name="plus" size={16} />
+            Add Page
+         </button>
+         
+         <div className="h-4 w-px bg-slate-300"></div>
+
+         <button 
+           onClick={() => dispatch({ type: 'REMOVE_PAGE' })}
+           disabled={pageCount <= 1}
+           className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-full shadow-sm hover:border-red-500 hover:text-red-600 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+         >
+            <Icon name="trash" size={16} />
+            Remove Page
+         </button>
+      </div>
       
       {/* Context Menu */}
       {contextMenu && (
