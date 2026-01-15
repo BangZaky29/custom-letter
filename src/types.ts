@@ -1,6 +1,7 @@
+
 export type Orientation = 'portrait' | 'landscape';
 export type PaperSize = 'A4' | 'A3' | 'A5' | 'A6' | 'Custom';
-export type ElementType = 'text' | 'image';
+export type ElementType = 'text' | 'image' | 'rect' | 'line';
 export type TextAlign = 'left' | 'center' | 'right' | 'justify';
 
 export interface PageConfig {
@@ -37,18 +38,22 @@ export interface ElementStyle {
 export interface DocElement {
   id: string;
   type: ElementType;
-  x: number; // in mm relative to page
-  y: number; // in mm relative to page
+  x: number; // in mm relative to specific page
+  y: number; // in mm relative to specific page
   width: number; // in mm
   height: number; // in mm
+  page: number; // Page index (0-based)
   content: string; // Text content or Image Base64
   style?: ElementStyle;
+  category?: 'content' | 'header' | 'footer'; // To identify Kop Surat elements
 }
 
 export interface DocumentState {
   title: string;
   pageConfig: PageConfig;
+  pageCount: number; // Number of pages
   elements: DocElement[];
-  selectedElementId: string | null;
+  selectedIds: string[]; // Changed from selectedElementId to array
   zoom: number;
+  headerActive: boolean; // Global toggle state for Kop Surat
 }

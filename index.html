@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -41,50 +42,93 @@
 
       /* ================= PRINT STYLES ================= */
       @media print {
-        /* Hide everything */
+        @page {
+          margin: 0;
+        }
+
+        html, body {
+          height: auto !important;
+          overflow: visible !important;
+          background: white !important;
+        }
+
+        /* 1. Global Visibility Reset: Hide all UI */
         body * {
           visibility: hidden;
         }
 
-        /* Show canvas only */
-        #document-canvas,
-        #document-canvas * {
+        /* 2. Show Canvas Area and its children */
+        #canvas-area-container,
+        #canvas-area-container * {
           visibility: visible;
         }
 
-        /* Position canvas */
-        #document-canvas {
-          position: fixed !important;
+        /* 3. Position Canvas to Top-Left */
+        #canvas-area-container {
+          position: absolute !important;
           top: 0 !important;
           left: 0 !important;
+          width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: transparent !important;
+          display: block !important;
+          overflow: visible !important;
+        }
+
+        /* 4. Layout Resets for Page Wrappers */
+        .document-page-wrapper {
+          position: relative !important;
+          top: auto !important;
+          left: auto !important;
+          display: block !important;
           margin: 0 !important;
           padding: 0 !important;
           box-shadow: none !important;
           border: none !important;
+          /* Force page breaks */
+          break-after: page;
+          page-break-after: always;
+          /* Ensure dimensions */
+          width: 100% !important;
+          height: auto !important;
+        }
+        
+        /* Remove any ring borders from Tailwind */
+        .document-page-wrapper.ring-1 {
+            box-shadow: none !important;
+            --tw-ring-color: transparent !important;
+        }
+
+        /* 5. Reset Zoom/Transform on Page Content */
+        .document-page {
           transform: none !important;
-          z-index: 9999;
-          overflow: visible !important;
+          margin: 0 !important;
+          box-shadow: none !important;
+          border: none !important;
         }
 
-        /* Reset body */
-        body {
-          background: white !important;
-          overflow: visible !important;
+        /* 6. Hide UI specific to Editor inside Canvas */
+        /* Margins Guide (dashed lines) */
+        .document-page > div[class*="border-dashed"]:not(.draggable-element) {
+           display: none !important;
+        }
+        
+        /* Hide Marquee Selection Box */
+        div[class*="bg-blue-500/20"] {
+            display: none !important;
         }
 
-        /* Hide UI helpers */
-        .no-print {
+        /* Selection UI (Resize handles, Delete buttons) */
+        .draggable-element .bg-blue-500, /* Resize handle */
+        .draggable-element .bg-red-500,   /* Delete button */
+        button[class*="bg-red-500"]
+        {
           display: none !important;
-        }
-
-        /* Ensure colors print */
-        * {
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
         }
       }
     </style>
-
+    
     <!-- Import Map (Optional – OK for sandbox / hybrid setup) -->
     <script type="importmap">
 {

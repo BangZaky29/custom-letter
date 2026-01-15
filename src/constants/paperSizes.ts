@@ -9,10 +9,9 @@ export const PAPER_DIMENSIONS: Record<Exclude<PaperSize, 'Custom'>, { width: num
 
 export const PIXELS_PER_MM = 3.78; // Approx 96 DPI
 
+// Simplified to 3 distinct types as requested
 export const DEFAULT_FONTS = [
-  { name: 'Inter (Sans)', value: 'Inter, sans-serif' },
-  { name: 'Merriweather (Serif)', value: 'Merriweather, serif' },
-  { name: 'Roboto Mono (Mono)', value: 'Roboto Mono, monospace' },
-  { name: 'Arial', value: 'Arial, sans-serif' },
-  { name: 'Times New Roman', value: 'Times New Roman, serif' },
+  { name: 'Sans Serif (Inter)', value: 'Inter, sans-serif' },
+  { name: 'Serif (Merriweather)', value: 'Merriweather, serif' },
+  { name: 'Monospace (Roboto)', value: 'Roboto Mono, monospace' },
 ];

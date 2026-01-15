@@ -1,4 +1,5 @@
-import React, { useRef, useState } from 'react';
+
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useDocument } from '../store/documentStore';
 import { mmToPx, pxToMm } from '../utils/unitConverter';
 import { DocElement } from '../types';
@@ -6,22 +7,39 @@ import { Icon } from '../components/Icon';
 
 export const CanvasArea: React.FC = () => {
   const { state, dispatch } = useDocument();
-  const { pageConfig, elements, selectedElementId, zoom } = state;
-  const containerRef = useRef<HTMLDivElement>(null);
+  const { pageConfig, elements, selectedIds, zoom, pageCount } = state;
 
-  // Dragging State
+  // --- LOCAL STATE ---
+  
+  // Dragging State (Group)
   const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); // Mouse start pos (px)
+  const [dragDelta, setDragDelta] = useState({ x: 0, y: 0 }); // Current delta (px) - used for preview
   
   // Resizing State
   const [isResizing, setIsResizing] = useState(false);
   const [resizeStart, setResizeStart] = useState({ w: 0, h: 0, x: 0, y: 0 });
+  const [resizingElementId, setResizingElementId] = useState<string | null>(null);
 
-  const [activeElementId, setActiveElementId] = useState<string | null>(null);
+  // Marquee Selection State
+  const [selectionBox, setSelectionBox] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
+  const [selectionStart, setSelectionStart] = useState<{ x: number, y: number, pageIndex: number } | null>(null);
 
-  // Dimensions
+  // Context Menu State
+  const [contextMenu, setContextMenu] = useState<{ 
+      x: number; 
+      y: number; 
+      type: 'canvas' | 'element';
+      pageIndex?: number; 
+      mmX?: number; 
+      mmY?: number;
+      elementId?: string;
+  } | null>(null);
+
+  // Constants
   const pageWidthPx = mmToPx(pageConfig.width);
   const pageHeightPx = mmToPx(pageConfig.height);
+  
   const margins = {
     top: mmToPx(pageConfig.margins.top),
     bottom: mmToPx(pageConfig.margins.bottom),
@@ -29,17 +47,86 @@ export const CanvasArea: React.FC = () => {
     right: mmToPx(pageConfig.margins.right),
   };
 
-  const handleMouseDown = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    const element = elements.find(el => el.id === id);
-    if (!element) return;
+  // Close context menu on click elsewhere
+  useEffect(() => {
+    const handleClick = () => setContextMenu(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, []);
 
-    dispatch({ type: 'SELECT_ELEMENT', payload: id });
-    setActiveElementId(id);
+  // --- KEYBOARD LISTENERS (Arrow Keys) ---
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if (selectedIds.length === 0) return;
+          if ((e.target as HTMLElement).isContentEditable) return; // Don't move if typing
+
+          const step = e.shiftKey ? 10 : 1; 
+          const pxStep = e.shiftKey ? 10 : 1; 
+          const mmStep = pxToMm(pxStep);
+
+          let dx = 0;
+          let dy = 0;
+
+          if (e.key === 'ArrowUp') dy = -mmStep;
+          else if (e.key === 'ArrowDown') dy = mmStep;
+          else if (e.key === 'ArrowLeft') dx = -mmStep;
+          else if (e.key === 'ArrowRight') dx = mmStep;
+          else return;
+
+          e.preventDefault();
+          dispatch({
+              type: 'MOVE_ELEMENTS',
+              payload: { ids: selectedIds, dxMm: dx, dyMm: dy }
+          });
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedIds, dispatch]);
+
+  // --- MOUSE HANDLERS ---
+  const handleElementMouseDown = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation(); 
+    e.preventDefault(); 
+    setContextMenu(null);
+
+    let newSelection = [...selectedIds];
+    const isSelected = selectedIds.includes(id);
+
+    if (e.shiftKey || e.ctrlKey) {
+        if (isSelected) {
+            newSelection = newSelection.filter(sid => sid !== id);
+        } else {
+            newSelection.push(id);
+        }
+        dispatch({ type: 'SET_SELECTION', payload: newSelection });
+    } else {
+        if (!isSelected) {
+            newSelection = [id];
+            dispatch({ type: 'SET_SELECTION', payload: newSelection });
+        }
+    }
+
     setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    setDragDelta({ x: 0, y: 0 }); 
+  };
 
-    // Initial mouse position
-    setDragOffset({ x: e.clientX, y: e.clientY });
+  const handlePageMouseDown = (e: React.MouseEvent, pageIndex: number) => {
+    if ((e.target as HTMLElement).closest('.draggable-element')) return;
+    
+    if (!e.shiftKey && !e.ctrlKey) {
+        dispatch({ type: 'SELECT_ELEMENT', payload: null });
+    }
+    
+    setContextMenu(null);
+
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = (e.clientX - rect.left) / zoom;
+    const y = (e.clientY - rect.top) / zoom;
+    
+    setSelectionStart({ x, y, pageIndex });
+    setSelectionBox({ x, y, w: 0, h: 0 });
   };
 
   const handleResizeMouseDown = (e: React.MouseEvent, id: string) => {
@@ -48,7 +135,7 @@ export const CanvasArea: React.FC = () => {
     if (!element) return;
 
     dispatch({ type: 'SELECT_ELEMENT', payload: id });
-    setActiveElementId(id);
+    setResizingElementId(id);
     setIsResizing(true);
     
     setResizeStart({
@@ -60,62 +147,191 @@ export const CanvasArea: React.FC = () => {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!activeElementId) return;
-
-    // Resizing Logic
-    if (isResizing) {
+    if (isResizing && resizingElementId) {
       const deltaX = (e.clientX - resizeStart.x) / zoom;
       const deltaY = (e.clientY - resizeStart.y) / zoom;
       const deltaXmm = pxToMm(deltaX);
       const deltaYmm = pxToMm(deltaY);
 
-      // Enforce minimum size
-      const newWidth = Math.max(10, resizeStart.w + deltaXmm);
-      const newHeight = Math.max(5, resizeStart.h + deltaYmm);
+      const newWidth = Math.max(1, resizeStart.w + deltaXmm);
+      const newHeight = Math.max(1, resizeStart.h + deltaYmm);
 
       dispatch({
         type: 'UPDATE_ELEMENT',
         payload: {
-          id: activeElementId,
+          id: resizingElementId,
           changes: { width: newWidth, height: newHeight }
         }
       });
       return;
     }
 
-    // Dragging Logic
     if (isDragging) {
-      const deltaX = (e.clientX - dragOffset.x) / zoom;
-      const deltaY = (e.clientY - dragOffset.y) / zoom;
-      const deltaXmm = pxToMm(deltaX);
-      const deltaYmm = pxToMm(deltaY);
+        const dx = (e.clientX - dragStart.x) / zoom;
+        const dy = (e.clientY - dragStart.y) / zoom;
+        setDragDelta({ x: dx, y: dy });
+        return;
+    }
 
-      const element = elements.find(el => el.id === activeElementId);
-      if (element) {
-        dispatch({
-          type: 'UPDATE_ELEMENT',
-          payload: {
-            id: activeElementId,
-            changes: {
-              x: element.x + deltaXmm,
-              y: element.y + deltaYmm,
-            },
-          },
-        });
-      }
-      setDragOffset({ x: e.clientX, y: e.clientY });
+    if (selectionStart && selectionBox) {
+        const pageEl = document.getElementById(`document-page-${selectionStart.pageIndex}`);
+        if(!pageEl) return;
+        
+        const rect = pageEl.getBoundingClientRect();
+        const currentX = (e.clientX - rect.left) / zoom;
+        const currentY = (e.clientY - rect.top) / zoom;
+
+        const x = Math.min(selectionStart.x, currentX);
+        const y = Math.min(selectionStart.y, currentY);
+        const w = Math.abs(currentX - selectionStart.x);
+        const h = Math.abs(currentY - selectionStart.y);
+
+        setSelectionBox({ x, y, w, h });
     }
   };
 
   const handleMouseUp = () => {
+    if (isDragging) {
+        if (dragDelta.x !== 0 || dragDelta.y !== 0) {
+            const dxMm = pxToMm(dragDelta.x);
+            const dyMm = pxToMm(dragDelta.y);
+            
+            dispatch({
+                type: 'MOVE_ELEMENTS',
+                payload: {
+                    ids: selectedIds,
+                    dxMm,
+                    dyMm
+                }
+            });
+        }
+    }
+
+    if (selectionStart && selectionBox) {
+        const p1 = { x: selectionBox.x, y: selectionBox.y };
+        const p2 = { x: selectionBox.x + selectionBox.w, y: selectionBox.y + selectionBox.h };
+        
+        const rectMm = {
+            x1: pxToMm(p1.x),
+            y1: pxToMm(p1.y),
+            x2: pxToMm(p2.x),
+            y2: pxToMm(p2.y)
+        };
+
+        const intersectingIds = elements
+            .filter(el => el.page === selectionStart.pageIndex)
+            .filter(el => {
+                const elRight = el.x + el.width;
+                const elBottom = el.y + (el.height || 10);
+                
+                return (
+                    el.x < rectMm.x2 &&
+                    elRight > rectMm.x1 &&
+                    el.y < rectMm.y2 &&
+                    elBottom > rectMm.y1
+                );
+            })
+            .map(el => el.id);
+        
+        if (intersectingIds.length > 0) {
+            dispatch({ type: 'SET_SELECTION', payload: intersectingIds });
+        }
+    }
+
     setIsDragging(false);
+    setDragDelta({ x: 0, y: 0 });
     setIsResizing(false);
-    setActiveElementId(null);
+    setResizingElementId(null);
+    setSelectionStart(null);
+    setSelectionBox(null);
   };
 
-  const handleBackgroundClick = () => {
-    dispatch({ type: 'SELECT_ELEMENT', payload: null });
+  const handleBackgroundClick = () => {};
+
+  const handleCanvasContextMenu = (e: React.MouseEvent, pageIndex: number) => {
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = (e.clientX - rect.left) / zoom;
+    const y = (e.clientY - rect.top) / zoom;
+
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      type: 'canvas',
+      pageIndex,
+      mmX: pxToMm(x),
+      mmY: pxToMm(y)
+    });
   };
+
+  const handleElementContextMenu = (e: React.MouseEvent, elementId: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu({
+          x: e.clientX,
+          y: e.clientY,
+          type: 'element',
+          elementId
+      });
+  };
+
+  const handleAddFromContextMenu = (type: 'text' | 'image') => {
+    if (!contextMenu || contextMenu.type !== 'canvas') return;
+    const pageIdx = contextMenu.pageIndex ?? 0;
+    const xPos = contextMenu.mmX ?? 20;
+    const yPos = contextMenu.mmY ?? 20;
+
+    if (type === 'text') {
+      dispatch({
+        type: 'ADD_ELEMENT',
+        payload: {
+          type: 'text',
+          page: pageIdx,
+          x: xPos,
+          y: yPos,
+          width: 80,
+          height: 0,
+          content: 'Type here...',
+          style: { fontFamily: 'Inter, sans-serif', fontSize: 16, fontWeight: 'normal', fontStyle: 'normal', textDecoration: 'none', textAlign: 'left', color: '#000000' },
+        }
+      });
+    } else {
+        // Image
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              dispatch({
+                type: 'ADD_ELEMENT',
+                payload: {
+                  type: 'image',
+                  page: pageIdx,
+                  x: xPos,
+                  y: yPos,
+                  width: 60,
+                  height: 40,
+                  content: event.target?.result as string,
+                }
+              });
+            };
+            reader.readAsDataURL(file);
+          }
+        };
+        input.click();
+    }
+    setContextMenu(null);
+  };
+
+  const handleDeleteElement = () => {
+      if(contextMenu?.elementId) {
+          dispatch({ type: 'REMOVE_ELEMENT', payload: contextMenu.elementId });
+      }
+      setContextMenu(null);
+  }
 
   const handleTextChange = (id: string, newText: string) => {
     dispatch({ type: 'UPDATE_ELEMENT', payload: { id, changes: { content: newText } } });
@@ -123,46 +339,108 @@ export const CanvasArea: React.FC = () => {
 
   return (
     <div 
-      className="flex-1 bg-slate-100 overflow-auto flex justify-center p-4 md:p-12 relative touch-none"
+      id="canvas-area-container"
+      className="flex-1 bg-slate-100 overflow-auto flex flex-col items-center p-4 md:p-8 relative touch-none gap-8"
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onClick={handleBackgroundClick}
     >
-      <div
-        id="document-canvas"
-        className="bg-white shadow-lg relative transition-transform origin-top duration-200"
-        style={{
-          width: `${pageWidthPx}px`,
-          height: `${pageHeightPx}px`,
-          transform: `scale(${zoom})`,
-          transformOrigin: 'top center'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Margins */}
-        <div 
-          className="absolute border border-dashed border-blue-200 pointer-events-none no-print opacity-50"
+      {/* Render Pages */}
+      {Array.from({ length: pageCount }).map((_, pageIndex) => (
+        <div
+          key={pageIndex}
+          id={`page-wrapper-${pageIndex}`}
+          className="document-page-wrapper relative shrink-0 shadow-lg transition-all duration-200 ease-out bg-white ring-1 ring-slate-200"
           style={{
-            top: margins.top,
-            left: margins.left,
-            right: margins.right,
-            bottom: margins.bottom,
+            width: pageWidthPx * zoom,
+            height: pageHeightPx * zoom,
           }}
-        />
+        >
+          <div
+            id={`document-page-${pageIndex}`}
+            className="document-page bg-white relative origin-top-left select-none"
+            style={{
+              width: pageWidthPx,
+              height: pageHeightPx,
+              transform: `scale(${zoom})`,
+              overflow: 'hidden',
+              cursor: 'default' 
+            }}
+            onMouseDown={(e) => handlePageMouseDown(e, pageIndex)}
+            onContextMenu={(e) => handleCanvasContextMenu(e, pageIndex)}
+          >
+            {/* Page Label */}
+            <div className="absolute top-0 -left-8 text-[10px] text-slate-400 font-medium uppercase tracking-wider no-print -rotate-90 origin-top-right translate-y-8 w-20 text-right">
+              Page {pageIndex + 1}
+            </div>
 
-        {/* Elements */}
-        {elements.map((el) => (
-          <DraggableElement
-            key={el.id}
-            element={el}
-            isSelected={selectedElementId === el.id}
-            onMouseDown={(e) => handleMouseDown(e, el.id)}
-            onResizeMouseDown={(e) => handleResizeMouseDown(e, el.id)}
-            onTextChange={(text) => handleTextChange(el.id, text)}
-          />
-        ))}
-      </div>
+            {/* Margins */}
+            <div 
+              className="absolute border border-dashed border-blue-200 pointer-events-none no-print opacity-50"
+              style={{ top: margins.top, left: margins.left, right: margins.right, bottom: margins.bottom }}
+            />
+
+            {/* Elements */}
+            {elements.filter(el => (el.page ?? 0) === pageIndex).map((el) => {
+                const isSelected = selectedIds.includes(el.id);
+                const offset = (isSelected && isDragging) ? dragDelta : { x: 0, y: 0 };
+
+                return (
+                  <DraggableElement
+                    key={el.id}
+                    element={el}
+                    isSelected={isSelected}
+                    dragOffset={offset}
+                    onMouseDown={(e) => handleElementMouseDown(e, el.id)}
+                    onSelect={() => dispatch({ type: 'SELECT_ELEMENT', payload: el.id })}
+                    onResizeMouseDown={(e) => handleResizeMouseDown(e, el.id)}
+                    onTextChange={(text) => handleTextChange(el.id, text)}
+                    onContextMenu={(e) => handleElementContextMenu(e, el.id)}
+                  />
+                )
+            })}
+            
+            {/* Marquee Box */}
+            {selectionStart && selectionBox && selectionStart.pageIndex === pageIndex && (
+                <div 
+                    className="absolute bg-blue-500/20 border border-blue-500 z-50 pointer-events-none"
+                    style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.w, height: selectionBox.h }}
+                />
+            )}
+          </div>
+        </div>
+      ))}
+      
+      {/* Context Menu */}
+      {contextMenu && (
+        <div 
+            className="fixed z-50 bg-white rounded-lg shadow-xl border border-slate-100 py-1 w-48 animate-fade-in"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onClick={(e) => e.stopPropagation()}
+        >
+            {contextMenu.type === 'canvas' ? (
+                <>
+                    <div className="px-3 py-2 border-b border-slate-50 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        Add Content
+                    </div>
+                    <button onClick={() => handleAddFromContextMenu('text')} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-sm text-slate-700 flex items-center gap-2">
+                        <Icon name="file-text" size={16} /><span>Add Text</span>
+                    </button>
+                    <button onClick={() => handleAddFromContextMenu('image')} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-sm text-slate-700 flex items-center gap-2">
+                        <Icon name="image" size={16} /><span>Add Image</span>
+                    </button>
+                </>
+            ) : (
+                <>
+                    <div className="px-3 py-2 border-b border-slate-50 text-xs font-semibold text-slate-400 uppercase tracking-wider">Element Actions</div>
+                    <button onClick={handleDeleteElement} className="w-full text-left px-4 py-2 hover:bg-red-50 text-sm text-red-600 flex items-center gap-2">
+                        <Icon name="trash" size={16} /><span>Remove Item</span>
+                    </button>
+                </>
+            )}
+        </div>
+      )}
     </div>
   );
 };
@@ -170,23 +448,42 @@ export const CanvasArea: React.FC = () => {
 const DraggableElement: React.FC<{
   element: DocElement;
   isSelected: boolean;
+  dragOffset: { x: number; y: number };
   onMouseDown: (e: React.MouseEvent) => void;
+  onSelect: () => void;
   onResizeMouseDown: (e: React.MouseEvent) => void;
   onTextChange: (text: string) => void;
-}> = ({ element, isSelected, onMouseDown, onResizeMouseDown, onTextChange }) => {
+  onContextMenu: (e: React.MouseEvent) => void;
+}> = ({ element, isSelected, dragOffset, onMouseDown, onSelect, onResizeMouseDown, onTextChange, onContextMenu }) => {
   const { dispatch } = useDocument();
+  const elementRef = useRef<HTMLDivElement>(null);
 
-  // Construct CSS from element.style properties
+  useEffect(() => {
+    if (isSelected && element.type === 'text' && element.content === 'Type here...' && elementRef.current) {
+        const editable = elementRef.current.querySelector('[contenteditable]');
+        if (editable) {
+            (editable as HTMLElement).focus();
+            const range = document.createRange();
+            range.selectNodeContents(editable);
+            const sel = window.getSelection();
+            sel?.removeAllRanges();
+            sel?.addRange(range);
+        }
+    }
+  }, [isSelected, element.type, element.content]);
+
+  const visualLeft = mmToPx(element.x) + dragOffset.x;
+  const visualTop = mmToPx(element.y) + dragOffset.y;
+
   const style: React.CSSProperties = {
     position: 'absolute',
-    left: `${mmToPx(element.x)}px`,
-    top: `${mmToPx(element.y)}px`,
+    left: `${visualLeft}px`,
+    top: `${visualTop}px`,
     width: element.width ? `${mmToPx(element.width)}px` : 'auto',
-    height: element.type === 'image' && element.height ? `${mmToPx(element.height)}px` : 'auto',
+    height: element.type !== 'text' && element.height ? `${mmToPx(element.height)}px` : 'auto',
     maxWidth: '100%',
     cursor: isSelected ? 'move' : 'pointer',
     
-    // Font & Text
     fontFamily: element.style?.fontFamily,
     fontSize: element.style?.fontSize ? `${element.style.fontSize}px` : undefined,
     fontWeight: element.style?.fontWeight,
@@ -195,67 +492,54 @@ const DraggableElement: React.FC<{
     textAlign: element.style?.textAlign,
     color: element.style?.color,
     lineHeight: element.style?.lineHeight || 1.4,
-    letterSpacing: element.style?.letterSpacing ? `${element.style.letterSpacing}px` : undefined,
     
-    // Block Styles
     backgroundColor: element.style?.backgroundColor,
-    paddingLeft: element.style?.padding ? `${element.style.padding}px` : '4px', // Indent
-    paddingRight: '4px',
-    paddingTop: '4px',
-    paddingBottom: '4px',
+    padding: element.style?.padding ? `${element.style.padding}px` : undefined,
     border: element.style?.border || (isSelected ? '1px dashed #3b82f6' : '1px solid transparent'),
     borderRadius: element.style?.borderRadius ? `${element.style.borderRadius}px` : undefined,
+    listStyleType: element.style?.listStyleType,
+    opacity: element.style?.opacity,
     
-    // Lists
-    display: element.style?.listStyleType && element.style.listStyleType !== 'none' ? 'list-item' : 'block',
-    listStyleType: element.style?.listStyleType || 'none',
-    listStylePosition: 'inside',
-    
-    boxSizing: 'border-box',
-  };
-
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    dispatch({ type: 'REMOVE_ELEMENT', payload: element.id });
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    zIndex: isSelected ? 20 : 10,
   };
 
   return (
-    <div style={style} onMouseDown={onMouseDown} className="group relative select-none">
-      {/* Delete Button */}
-      {isSelected && (
-        <div 
-          className="absolute -top-3 -right-3 bg-white shadow-md border border-slate-100 rounded-full p-1 cursor-pointer hover:bg-red-50 z-20 no-print" 
-          onClick={handleDelete}
+    <div
+      ref={elementRef}
+      className={`draggable-element group ${isSelected ? 'z-20' : 'z-10'}`}
+      style={style}
+      onMouseDown={onMouseDown}
+      onClick={(e) => e.stopPropagation()} 
+      onContextMenu={onContextMenu}
+    >
+      {element.type === 'text' && (
+        <div contentEditable suppressContentEditableWarning className="outline-none w-full h-full" style={{ cursor: 'text', minWidth: '20px' }}
+            onBlur={(e) => onTextChange(e.currentTarget.innerText)}
+            onMouseDown={(e) => { if (!isSelected) onSelect(); e.stopPropagation(); }}
         >
-          <Icon name="trash" size={14} className="text-red-500" />
+          {element.content}
         </div>
       )}
-
-      {/* Resize Handle (Bottom Right) */}
-      {isSelected && (
-        <div 
-          className="absolute -bottom-1 -right-1 w-3 h-3 bg-blue-500 rounded-full cursor-se-resize z-20 no-print border-2 border-white shadow-sm"
-          onMouseDown={onResizeMouseDown}
-        />
+      {element.type === 'image' && (
+        <img src={element.content} alt="Upload" className="w-full h-full object-contain pointer-events-none select-none" />
+      )}
+      {element.type === 'rect' && (
+        <div style={{ width: '100%', height: '100%', backgroundColor: element.style?.backgroundColor || 'transparent', border: element.style?.border || '2px solid black' }} />
+      )}
+      {element.type === 'line' && (
+        <div style={{ width: '100%', height: `${Math.max(2, element.height || 2)}px`, backgroundColor: element.style?.color || '#000000' }} />
       )}
 
-      {/* Content */}
-      {element.type === 'text' ? (
-        <div
-          contentEditable
-          suppressContentEditableWarning
-          className="outline-none min-w-[20px] min-h-[1em] whitespace-pre-wrap h-full"
-          onBlur={(e) => onTextChange(e.currentTarget.innerText)}
-          onMouseDown={(e) => e.stopPropagation()} 
-          dangerouslySetInnerHTML={{ __html: element.content }}
-          style={{ cursor: 'text' }}
-        />
-      ) : (
-        <img 
-          src={element.content} 
-          alt="Element" 
-          className="w-full h-full object-fill pointer-events-none block" 
-        />
+      {isSelected && (
+        <>
+            <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-blue-500 border border-white rounded-full cursor-nwse-resize z-30 shadow-sm" onMouseDown={onResizeMouseDown} />
+            <button className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-40" onClick={(e) => { e.stopPropagation(); dispatch({ type: 'REMOVE_ELEMENT', payload: element.id }); }}>
+                <Icon name="x" size={10} />
+            </button>
+        </>
       )}
     </div>
   );

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { useDocument } from '../store/documentStore';
 import { Icon } from '../components/Icon';
@@ -6,8 +7,10 @@ import { ElementStyle } from '../types';
 
 export const Toolbar: React.FC = () => {
   const { state, dispatch } = useDocument();
-  const { selectedElementId, elements } = state;
+  const { selectedIds, elements } = state;
 
+  // Use the first selected element for property editing
+  const selectedElementId = selectedIds.length > 0 ? selectedIds[0] : null;
   const selectedElement = elements.find(el => el.id === selectedElementId);
 
   const defaultStyle: ElementStyle = {
@@ -30,16 +33,17 @@ export const Toolbar: React.FC = () => {
 
   const updateStyle = (key: keyof ElementStyle, value: any) => {
     if (!selectedElementId) return;
-    const currentStyle = selectedElement?.style || defaultStyle;
+    
+    // Apply style change to ALL selected elements
     dispatch({
-      type: 'UPDATE_ELEMENT',
+      type: 'UPDATE_MULTIPLE_ELEMENTS',
       payload: {
-        id: selectedElementId,
+        ids: selectedIds,
         changes: {
           style: {
-            ...currentStyle,
+            ...selectedElement?.style, // Base style of first element (approximation) or we need more complex merge
             [key]: value,
-          },
+          } as ElementStyle // Casting because merging styles generically is tricky in TS
         },
       },
     });
@@ -180,10 +184,10 @@ export const Toolbar: React.FC = () => {
   const ClearFormatting = () => (
      <button 
         onClick={() => {
-           // Reset styles
+           // Reset styles for all selected
            dispatch({
-             type: 'UPDATE_ELEMENT',
-             payload: { id: selectedElementId!, changes: { style: defaultStyle } }
+             type: 'UPDATE_MULTIPLE_ELEMENTS',
+             payload: { ids: selectedIds, changes: { style: defaultStyle } }
            })
         }}
         disabled={isDisabled}
@@ -280,11 +284,6 @@ export const Toolbar: React.FC = () => {
 
   return (
     <>
-      {/* 
-        -----------------------------------
-        MOBILE TOOLBAR (Simpler, horizontal scroll)
-        -----------------------------------
-      */}
       <div className="md:hidden w-full h-14 bg-white flex items-center px-4 gap-3 overflow-x-auto no-scrollbar border-b border-slate-100">
         <select 
           className="text-xs border border-slate-300 rounded px-1 py-1 w-24"
@@ -304,18 +303,9 @@ export const Toolbar: React.FC = () => {
         <ListControls />
       </div>
 
-
-      {/* 
-        -----------------------------------
-        DESKTOP RIBBON TOOLBAR
-        -----------------------------------
-      */}
       <div className="hidden md:flex w-full h-24 bg-[#f3f4f6] border-b border-slate-300 items-start px-2 py-1 select-none">
-        
-        {/* GROUP: FONT */}
         <div className="flex flex-col h-full px-2 border-r border-slate-300/50">
           <div className="flex-1 flex gap-3 pt-1">
-             {/* Col 1: Font Face & Size */}
              <div className="flex flex-col gap-1">
                 <div className="flex gap-1">
                    <FontFace />
@@ -323,12 +313,9 @@ export const Toolbar: React.FC = () => {
                 </div>
                 <div className="flex gap-1 items-center">
                    <FontStyles />
-                   {/* Sub/Superscript Mocks for visual completeness */}
                    <span className="text-slate-300 text-xs px-1 select-none">x₂ x²</span> 
                 </div>
              </div>
-
-             {/* Col 2: Colors & Clear */}
              <div className="flex flex-col justify-between py-0.5">
                 <div className="flex justify-end">
                    <ClearFormatting />
@@ -339,10 +326,8 @@ export const Toolbar: React.FC = () => {
           <div className="text-[10px] text-slate-500 text-center font-medium mt-1 -mb-0.5">Font</div>
         </div>
 
-        {/* GROUP: PARAGRAPH */}
         <div className="flex flex-col h-full px-3 border-r border-slate-300/50">
            <div className="flex-1 flex gap-4 pt-1">
-              {/* Col 1: Bullets & Indent */}
               <div className="flex flex-col gap-1.5">
                  <div className="flex gap-1">
                     <ListControls />
@@ -353,7 +338,6 @@ export const Toolbar: React.FC = () => {
                  </div>
               </div>
 
-              {/* Col 2: Box & Spacing */}
               <div className="flex flex-col gap-1.5">
                  <BoxFormatting />
               </div>
@@ -361,7 +345,6 @@ export const Toolbar: React.FC = () => {
            <div className="text-[10px] text-slate-500 text-center font-medium mt-1 -mb-0.5">Paragraph</div>
         </div>
 
-        {/* GROUP: STYLES (Mock) */}
         <div className="flex flex-col h-full px-3 border-r border-slate-300/50 opacity-60 grayscale cursor-not-allowed">
            <div className="flex-1 flex gap-1 items-center pt-1">
                <div className="w-12 h-10 bg-white border border-slate-200 flex items-center justify-center text-xs">Normal</div>

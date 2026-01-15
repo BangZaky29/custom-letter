@@ -1,3 +1,4 @@
+
 import React from 'react';
 import {
   Plus,
@@ -32,7 +33,13 @@ import {
   Maximize,
   ChevronUp,
   ChevronDown,
-  Printer
+  Printer,
+  LayoutTemplate,
+  Undo,
+  Redo,
+  Copy,
+  Square,
+  Calendar
 } from 'lucide-react';
 
 export type IconName = 
@@ -41,7 +48,7 @@ export type IconName =
   | 'bold' | 'italic' | 'underline' | 'chevron-left' | 'menu' | 'x' | 'check' | 'alert'
   | 'palette' | 'minus' | 'strikethrough' | 'highlighter' | 'list-ul' | 'list-ol' 
   | 'indent' | 'outdent' | 'type' | 'eraser' | 'border-all' | 'maximize' | 'arrow-up' | 'arrow-down'
-  | 'printer';
+  | 'printer' | 'template' | 'undo' | 'redo' | 'copy' | 'square' | 'calendar';
 
 interface IconProps {
   name: IconName;
@@ -78,11 +85,17 @@ const iconMap: Record<IconName, React.ElementType> = {
   'outdent': Outdent,
   'type': Type,
   'eraser': Eraser,
-  'border-all': Grid, // LayoutGrid or Grid
+  'border-all': Grid, 
   'maximize': Maximize,
   'arrow-up': ChevronUp,
   'arrow-down': ChevronDown,
-  'printer': Printer
+  'printer': Printer,
+  'template': LayoutTemplate,
+  'undo': Undo,
+  'redo': Redo,
+  'copy': Copy,
+  'square': Square,
+  'calendar': Calendar
 };
 
 export const Icon: React.FC<IconProps> = ({ name, size = 20, className = '' }) => {

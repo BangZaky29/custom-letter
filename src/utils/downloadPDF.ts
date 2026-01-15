@@ -1,71 +1,100 @@
+
 // @ts-ignore
 import html2canvas from 'html2canvas';
 // @ts-ignore
 import { jsPDF } from 'jspdf';
-import { mmToPx, pxToMm } from './unitConverter';
+import { pxToMm } from './unitConverter';
 
 export const printPreview = () => {
-  // Uses the browser's native print preview which we've styled with @media print in index.html
-  // to only show the canvas.
   window.print();
 };
 
 export const downloadPDF = async (fileName: string = 'document.pdf') => {
-  const element = document.getElementById('document-canvas');
-  if (!element) {
-    console.error("Canvas element not found");
+  // Find all page elements
+  const pages = document.querySelectorAll('.document-page');
+  if (pages.length === 0) {
+    console.error("No pages found");
     return;
   }
 
+  // Initialize jsPDF
+  let pdf: any = null;
+
   try {
-    // 1. Clone the element to render it without zoom/scaling interference
-    const clone = element.cloneNode(true) as HTMLElement;
-    
-    // 2. Style the clone to be fixed size (A4/etc) and off-screen
-    // We remove the transform scale to get high resolution 1:1 render
-    clone.style.transform = 'none';
-    clone.style.position = 'fixed';
-    clone.style.top = '-10000px';
-    clone.style.left = '-10000px';
-    clone.style.zIndex = '-1';
-    clone.style.margin = '0';
-    clone.style.boxShadow = 'none';
-    
-    // Append to body so html2canvas can find it
-    document.body.appendChild(clone);
+    for (let i = 0; i < pages.length; i++) {
+        const pageElement = pages[i] as HTMLElement;
+        
+        // 1. Clone the element
+        const clone = pageElement.cloneNode(true) as HTMLElement;
+        
+        // 2. Style clone for capture - Force exact dimensions based on offsetWidth/Height
+        const width = pageElement.offsetWidth;
+        const height = pageElement.offsetHeight;
 
-    // 3. Capture with html2canvas
-    const canvas = await html2canvas(clone, {
-      scale: 2, // High resolution
-      useCORS: true, // For images
-      backgroundColor: '#ffffff',
-      logging: false,
-    });
+        clone.style.width = `${width}px`;
+        clone.style.height = `${height}px`;
+        clone.style.transform = 'none'; // Reset scale
+        clone.style.position = 'fixed';
+        clone.style.top = '0';
+        clone.style.left = '0';
+        clone.style.zIndex = '-9999';
+        clone.style.margin = '0';
+        clone.style.boxShadow = 'none';
+        clone.style.backgroundColor = '#ffffff';
+        
+        // 3. REMOVE NO-PRINT ELEMENTS (The Blue Dotted Border & UI controls)
+        const noPrintElements = clone.querySelectorAll('.no-print');
+        noPrintElements.forEach(el => el.remove());
 
-    // 4. Clean up clone
-    document.body.removeChild(clone);
+        // Remove selection boxes or drag handles if any were cloned
+        const uiElements = clone.querySelectorAll('.z-30, .z-40, .z-50'); // Resize handles, delete buttons
+        uiElements.forEach(el => el.remove());
 
-    // 5. Generate PDF with jsPDF
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
-    
-    // Calculate dimensions based on the canvas size
-    // We assume the canvas width/height in px corresponds to the mm size via our unit converter
-    const imgWidthMm = pxToMm(element.offsetWidth);
-    const imgHeightMm = pxToMm(element.offsetHeight);
+        document.body.appendChild(clone);
 
-    // Initialize jsPDF with the correct orientation and size
-    const orientation = imgWidthMm > imgHeightMm ? 'landscape' : 'portrait';
-    const pdf = new jsPDF({
-      orientation,
-      unit: 'mm',
-      format: [imgWidthMm, imgHeightMm]
-    });
+        // 4. Capture with higher scale for better quality
+        const canvas = await html2canvas(clone, {
+            scale: 2, // 2x scale for sharpness
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+            width: width,
+            height: height
+        });
 
-    pdf.addImage(imgData, 'JPEG', 0, 0, imgWidthMm, imgHeightMm);
-    pdf.save(fileName);
+        document.body.removeChild(clone);
+
+        // 5. Add to PDF
+        // Convert the captured canvas pixel dimensions back to mm for the PDF
+        const imgWidthMm = pxToMm(width);
+        const imgHeightMm = pxToMm(height);
+        
+        const orientation = imgWidthMm > imgHeightMm ? 'landscape' : 'portrait';
+
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+        if (i === 0) {
+            // First page creates the PDF
+            pdf = new jsPDF({
+                orientation,
+                unit: 'mm',
+                format: [imgWidthMm, imgHeightMm]
+            });
+        } else {
+            // Subsequent pages add a new page
+            pdf.addPage([imgWidthMm, imgHeightMm], orientation);
+        }
+
+        // Add image to cover the full PDF page
+        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidthMm, imgHeightMm);
+    }
+
+    if (pdf) {
+        pdf.save(fileName);
+    }
 
   } catch (error) {
     console.error("PDF Generation failed:", error);
-    alert("Failed to generate PDF. Please try the 'Print Preview' option and save as PDF.");
+    alert("Failed to generate PDF.");
   }
 };
