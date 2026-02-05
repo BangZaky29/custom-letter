@@ -1,4 +1,3 @@
-
 import React, { useRef, useState, useEffect } from 'react';
 import { useDocument } from '../store/documentStore';
 import { mmToPx, pxToMm } from '../utils/unitConverter';
@@ -13,7 +12,7 @@ export const CanvasArea: React.FC = () => {
   
   // Dragging State (Group)
   const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); // Mouse start pos (px)
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); // Mouse/Touch start pos (px)
   const [dragDelta, setDragDelta] = useState({ x: 0, y: 0 }); // Current delta (px) - used for preview
   
   // Resizing State
@@ -54,40 +53,23 @@ export const CanvasArea: React.FC = () => {
     return () => window.removeEventListener('click', handleClick);
   }, []);
 
-  // --- KEYBOARD LISTENERS (Arrow Keys) ---
-  useEffect(() => {
-      const handleKeyDown = (e: KeyboardEvent) => {
-          if (selectedIds.length === 0) return;
-          if ((e.target as HTMLElement).isContentEditable) return; // Don't move if typing
-
-          const step = e.shiftKey ? 10 : 1; 
-          const pxStep = e.shiftKey ? 10 : 1; 
-          const mmStep = pxToMm(pxStep);
-
-          let dx = 0;
-          let dy = 0;
-
-          if (e.key === 'ArrowUp') dy = -mmStep;
-          else if (e.key === 'ArrowDown') dy = mmStep;
-          else if (e.key === 'ArrowLeft') dx = -mmStep;
-          else if (e.key === 'ArrowRight') dx = mmStep;
-          else return;
-
-          e.preventDefault();
-          dispatch({
-              type: 'MOVE_ELEMENTS',
-              payload: { ids: selectedIds, dxMm: dx, dyMm: dy }
-          });
-      };
-
-      window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIds, dispatch]);
-
-  // --- MOUSE HANDLERS ---
-  const handleElementMouseDown = (e: React.MouseEvent, id: string) => {
+  // --- POINTER EVENT HANDLERS (Unified Mouse & Touch) ---
+  
+  const handleElementPointerDown = (e: React.PointerEvent, id: string) => {
     e.stopPropagation(); 
+    // Prevent default touch actions like scrolling ONLY if we are initiating a drag/resize
+    // However, preventDefault on pointerdown might stop focus. 
+    // For dragging, we usually want to capture the pointer.
+    
+    // We only prevent default if it's not text editing interaction?
+    // Actually, for dragging, we want to prevent scrolling.
+    if ((e.target as HTMLElement).getAttribute('contenteditable') === 'true') {
+        return; // Let default behavior happen for text editing
+    }
+
     e.preventDefault(); 
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    
     setContextMenu(null);
 
     let newSelection = [...selectedIds];
@@ -112,7 +94,8 @@ export const CanvasArea: React.FC = () => {
     setDragDelta({ x: 0, y: 0 }); 
   };
 
-  const handlePageMouseDown = (e: React.MouseEvent, pageIndex: number) => {
+  const handlePagePointerDown = (e: React.PointerEvent, pageIndex: number) => {
+    // If touched on a draggable element, ignore (handled by element)
     if ((e.target as HTMLElement).closest('.draggable-element')) return;
     
     if (!e.shiftKey && !e.ctrlKey) {
@@ -127,10 +110,16 @@ export const CanvasArea: React.FC = () => {
     
     setSelectionStart({ x, y, pageIndex });
     setSelectionBox({ x, y, w: 0, h: 0 });
+    
+    // Capture pointer for marquee
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
-  const handleResizeMouseDown = (e: React.MouseEvent, id: string) => {
+  const handleResizePointerDown = (e: React.PointerEvent, id: string) => {
     e.stopPropagation();
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+
     const element = elements.find(el => el.id === id);
     if (!element) return;
 
@@ -146,8 +135,9 @@ export const CanvasArea: React.FC = () => {
     });
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handlePointerMove = (e: React.PointerEvent) => {
     if (isResizing && resizingElementId) {
+      e.preventDefault();
       const deltaX = (e.clientX - resizeStart.x) / zoom;
       const deltaY = (e.clientY - resizeStart.y) / zoom;
       const deltaXmm = pxToMm(deltaX);
@@ -167,6 +157,7 @@ export const CanvasArea: React.FC = () => {
     }
 
     if (isDragging) {
+        e.preventDefault();
         const dx = (e.clientX - dragStart.x) / zoom;
         const dy = (e.clientY - dragStart.y) / zoom;
         setDragDelta({ x: dx, y: dy });
@@ -190,7 +181,15 @@ export const CanvasArea: React.FC = () => {
     }
   };
 
-  const handleMouseUp = () => {
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if(e.target instanceof Element) {
+        try {
+            (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+        } catch(err) {
+            // Ignore if not captured
+        }
+    }
+
     if (isDragging) {
         if (dragDelta.x !== 0 || dragDelta.y !== 0) {
             const dxMm = pxToMm(dragDelta.x);
@@ -341,9 +340,9 @@ export const CanvasArea: React.FC = () => {
     <div 
       id="canvas-area-container"
       className="flex-1 bg-slate-100 overflow-auto flex flex-col items-center p-4 md:p-8 relative touch-none gap-8 no-scrollbar"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
       onClick={handleBackgroundClick}
     >
       {/* Render Pages */}
@@ -360,7 +359,7 @@ export const CanvasArea: React.FC = () => {
           {/* DELETE PAGE ICON (TOP RIGHT) */}
           <button 
              onClick={(e) => { e.stopPropagation(); dispatch({ type: 'REMOVE_PAGE', payload: pageIndex }); }}
-             className="absolute -top-3 -right-3 z-[60] bg-red-500 text-white p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-all no-print"
+             className="absolute -top-3 -right-3 z-[60] bg-red-500 text-white p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-all no-print hidden md:block"
              title={`Remove Page ${pageIndex + 1}`}
              disabled={pageCount <= 1}
           >
@@ -377,11 +376,11 @@ export const CanvasArea: React.FC = () => {
               overflow: 'hidden',
               cursor: 'default' 
             }}
-            onMouseDown={(e) => handlePageMouseDown(e, pageIndex)}
+            onPointerDown={(e) => handlePagePointerDown(e, pageIndex)}
             onContextMenu={(e) => handleCanvasContextMenu(e, pageIndex)}
           >
             {/* Page Label */}
-            <div className="absolute top-0 -left-8 text-[10px] text-slate-400 font-medium uppercase tracking-wider no-print -rotate-90 origin-top-right translate-y-8 w-20 text-right">
+            <div className="absolute top-0 -left-8 text-[10px] text-slate-400 font-medium uppercase tracking-wider no-print -rotate-90 origin-top-right translate-y-8 w-20 text-right hidden md:block">
               Page {pageIndex + 1}
             </div>
 
@@ -402,9 +401,9 @@ export const CanvasArea: React.FC = () => {
                     element={el}
                     isSelected={isSelected}
                     dragOffset={offset}
-                    onMouseDown={(e) => handleElementMouseDown(e, el.id)}
+                    onPointerDown={(e) => handleElementPointerDown(e, el.id)}
                     onSelect={() => dispatch({ type: 'SELECT_ELEMENT', payload: el.id })}
-                    onResizeMouseDown={(e) => handleResizeMouseDown(e, el.id)}
+                    onResizePointerDown={(e) => handleResizePointerDown(e, el.id)}
                     onTextChange={(text) => handleTextChange(el.id, text)}
                     onContextMenu={(e) => handleElementContextMenu(e, el.id)}
                   />
@@ -423,7 +422,7 @@ export const CanvasArea: React.FC = () => {
       ))}
 
       {/* PAGE CONTROLS (BOTTOM) */}
-      <div className="flex items-center gap-4 mt-2 mb-8 no-print">
+      <div className="flex items-center gap-4 mt-2 mb-20 md:mb-8 no-print">
          <button 
            onClick={() => dispatch({ type: 'ADD_PAGE' })}
            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-full shadow-sm hover:border-blue-500 hover:text-blue-600 transition-colors text-sm font-medium"
@@ -481,12 +480,12 @@ const DraggableElement: React.FC<{
   element: DocElement;
   isSelected: boolean;
   dragOffset: { x: number; y: number };
-  onMouseDown: (e: React.MouseEvent) => void;
+  onPointerDown: (e: React.PointerEvent) => void;
   onSelect: () => void;
-  onResizeMouseDown: (e: React.MouseEvent) => void;
+  onResizePointerDown: (e: React.PointerEvent) => void;
   onTextChange: (text: string) => void;
   onContextMenu: (e: React.MouseEvent) => void;
-}> = ({ element, isSelected, dragOffset, onMouseDown, onSelect, onResizeMouseDown, onTextChange, onContextMenu }) => {
+}> = ({ element, isSelected, dragOffset, onPointerDown, onSelect, onResizePointerDown, onTextChange, onContextMenu }) => {
   const { dispatch } = useDocument();
   const elementRef = useRef<HTMLDivElement>(null);
 
@@ -515,6 +514,7 @@ const DraggableElement: React.FC<{
     height: element.type !== 'text' && element.height ? `${mmToPx(element.height)}px` : 'auto',
     maxWidth: '100%',
     cursor: isSelected ? 'move' : 'pointer',
+    touchAction: 'none', // Prevents browser scroll interaction
     
     fontFamily: element.style?.fontFamily,
     fontSize: element.style?.fontSize ? `${element.style.fontSize}px` : undefined,
@@ -543,14 +543,22 @@ const DraggableElement: React.FC<{
       ref={elementRef}
       className={`draggable-element group ${isSelected ? 'z-20' : 'z-10'}`}
       style={style}
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       onClick={(e) => e.stopPropagation()} 
       onContextMenu={onContextMenu}
     >
       {element.type === 'text' && (
         <div contentEditable suppressContentEditableWarning className="outline-none w-full h-full" style={{ cursor: 'text', minWidth: '20px' }}
             onBlur={(e) => onTextChange(e.currentTarget.innerText)}
-            onMouseDown={(e) => { if (!isSelected) onSelect(); e.stopPropagation(); }}
+            onPointerDown={(e) => { 
+                // Allow interactions for text editing, but also ensure selection works
+                // Text selection usually needs default behavior, so we might check if we are editing
+                if (!isSelected) {
+                   onSelect(); 
+                } else {
+                   e.stopPropagation(); // Stop propagation to avoid dragging parent if clicking inside text
+                }
+            }}
         >
           {element.content}
         </div>
@@ -567,9 +575,20 @@ const DraggableElement: React.FC<{
 
       {isSelected && (
         <>
-            <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-blue-500 border border-white rounded-full cursor-nwse-resize z-30 shadow-sm" onMouseDown={onResizeMouseDown} />
-            <button className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1 shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-40" onClick={(e) => { e.stopPropagation(); dispatch({ type: 'REMOVE_ELEMENT', payload: element.id }); }}>
-                <Icon name="x" size={10} />
+            {/* Resize Handle - Bigger touch target for mobile */}
+            <div 
+                className="absolute -bottom-3 -right-3 w-6 h-6 bg-blue-500 border-2 border-white rounded-full cursor-nwse-resize z-30 shadow-sm flex items-center justify-center touch-none" 
+                onPointerDown={onResizePointerDown}
+            >
+                <div className="w-2 h-2 bg-white rounded-full"/>
+            </div>
+            
+            {/* Delete Button - Bigger touch target */}
+            <button 
+                className="absolute -top-4 -right-4 bg-red-500 text-white rounded-full p-2 shadow-md md:opacity-0 md:group-hover:opacity-100 transition-opacity z-40" 
+                onClick={(e) => { e.stopPropagation(); dispatch({ type: 'REMOVE_ELEMENT', payload: element.id }); }}
+            >
+                <Icon name="x" size={12} />
             </button>
         </>
       )}

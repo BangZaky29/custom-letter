@@ -1,4 +1,3 @@
-
 import React from 'react';
 import {
   Plus,
@@ -45,7 +44,7 @@ import {
 export type IconName = 
   | 'plus' | 'trash' | 'download' | 'file-text' | 'image' | 'settings' 
   | 'align-left' | 'align-center' | 'align-right' | 'align-justify'
-  | 'bold' | 'italic' | 'underline' | 'chevron-left' | 'menu' | 'x' | 'check' | 'alert'
+  | 'bold' | 'italic' | 'underline' | 'chevron-left' | 'chevron-down' | 'menu' | 'x' | 'check' | 'alert'
   | 'palette' | 'minus' | 'strikethrough' | 'highlighter' | 'list-ul' | 'list-ol' 
   | 'indent' | 'outdent' | 'type' | 'eraser' | 'border-all' | 'maximize' | 'arrow-up' | 'arrow-down'
   | 'printer' | 'template' | 'undo' | 'redo' | 'copy' | 'square' | 'calendar';
@@ -71,6 +70,7 @@ const iconMap: Record<IconName, React.ElementType> = {
   'italic': Italic,
   'underline': Underline,
   'chevron-left': ChevronLeft,
+  'chevron-down': ChevronDown,
   'menu': Menu,
   'x': X,
   'check': Check,

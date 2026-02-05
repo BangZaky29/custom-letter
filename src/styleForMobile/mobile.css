@@ -1,0 +1,56 @@
+/* Mobile Specific Optimizations */
+
+/* Prevent pull-to-refresh and overscroll on mobile to make it feel like an app */
+body {
+    overscroll-behavior-y: none;
+    touch-action: pan-x pan-y;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Make draggable elements easier to touch */
+.draggable-element {
+    touch-action: none; /* Critical: Prevents browser scrolling while dragging an element */
+}
+
+/* Bottom Sheet Animation for Mobile */
+@keyframes slide-up-mobile {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+.animate-slide-up-mobile {
+    animation: slide-up-mobile 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Hide scrollbars in toolbars for cleaner look but keep functionality */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Mobile Toolbar specific styling */
+.mobile-toolbar-wrapper {
+    box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1);
+    z-index: 60;
+}
+
+/* Adjust Canvas Area for mobile touch */
+#canvas-area-container {
+    touch-action: pan-x pan-y; /* Allow scrolling the canvas area itself */
+}
+
+/* Increase tap targets on mobile */
+@media (max-width: 768px) {
+    button, select, input {
+        min-height: 44px; /* Apple Human Interface Guidelines minimum */
+        font-size: 16px; /* Prevent iOS zoom on focus */
+    }
+    
+    /* Optimize scaling for small screens */
+    .document-page-wrapper {
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+}
